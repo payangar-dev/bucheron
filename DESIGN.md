@@ -2,7 +2,7 @@
 
 Mod d'abattage d'arbres pour Minecraft 26.2, Fabric et NeoForge, licence MIT.
 
-État (2026-07-27) : M0 et M1 implémentés, build vert sur les deux loaders. Le mixin compile mais son application au runtime n'est pas encore vérifiée en jeu.
+État (2026-07-27) : tous les jalons implémentés et validés en jeu, build vert sur les deux loaders. Le statut courant et le reste à faire vivent dans CLAUDE.md.
 
 Références de travail :
 - Panda's Falling Trees (`.sources/pandas-falling-trees`, branche `master`, MC 1.21.11, Kotlin, GPL-3.0). Référence conceptuelle uniquement, aucune réutilisation de code.
@@ -203,7 +203,7 @@ Deux points d'implémentation :
 
 ### Fusion des sons d'impact
 
-Les impacts tombant dans la même cellule d'une grille de 3 blocs, à moins de 4 ticks d'intervalle, sont **fusionnés en un seul son**, joué au centre de masse des impacts qu'il représente, avec un volume qui croît avec leur nombre puis sature.
+L'éclatement n'a lieu qu'une fois par arbre, au moment où il se couche. Les impacts tombant dans la même cellule d'une grille de 3 blocs sont **fusionnés en un seul son**, joué au centre de masse des impacts qu'il représente, avec un volume qui croît avec leur nombre puis sature.
 
 Fusionner par localité plutôt que plafonner par tick n'est pas qu'une optimisation, c'est plus juste : un plafond fait taire les sons selon l'ordre d'itération, si bien que deux impacts aux extrémités opposées d'un grand arbre peuvent s'annuler l'un l'autre alors que deux impacts voisins se cumulent. La fusion spatiale préserve au contraire la répartition, et un craquement parcourt l'arbre au lieu de claquer d'un bloc.
 
@@ -245,21 +245,35 @@ Template multi-loader identique à `wild-instincts` et `contagious-fire` : `buil
 
 ```
 common/
-  Bucheron.java                     init commun
-  tree/TreeScanner.java             BFS bûches + feuilles, cache par joueur
-  tree/TreeShape.java               record : logs, leaves, drops, pivot, hauteur
-  entity/FallingTreeEntity.java     état + simulation serveur
-  entity/TreeFallPhysics.java       pendule, sans rebond
-  damage/TreeSweep.java             balayage et application des dégâts
+  BucheronInit.java                 init commun
+  Constants.java                    MOD_ID + logger
   LeafParticles.java                repris de soft-leaves
+  BucheronSounds.java               événements sonores custom
+  tree/TreeScanner.java             BFS bûches + feuilles
+  tree/TreeShape.java               record : origin, logs, leaves
+  tree/TreeFelling.java             abattage : drops, coûts, spawn de l'entité
+  tree/TreeMiningSpeed.java         temps de cassage, cache partagé client/serveur
+  entity/FallingTreeEntity.java     état, pendule (intégré en ligne), géométrie
+  entity/BucheronEntities.java      EntityType construit ici, enregistré par loader
+  damage/TreeSweep.java             balayage et application des dégâts
+  damage/BucheronDamageTypes.java   clé du damage type datapack
+  fx/LeafEffects.java               traînée, éclatement, sons de craquement fusionnés
   client/FallingTreeRenderer.java   rendu multi-blocs
-  network/TreeSpawnPayload.java     synchro de la forme de l'arbre
+  client/FallingTreeRenderState.java
+  client/BucheronClientNetwork.java application de la forme reçue, côté client
+  client/LeafFling.java             réinjection de la vélocité des particules
+  network/TreeShapePayload.java     synchro de la forme de l'arbre
   mixin/ServerPlayerGameModeMixin   interception de l'abattage
   mixin/BlockBehaviourMixin         temps de cassage
+  mixin/client/...                  providers de particules de feuilles + accessors
   platform/IPlatformHelper          services par loader
 fabric/    entrypoints + registres + impl platform
 neoforge/  entrypoints + registres + impl platform
 ```
+
+Le pendule n'a pas eu la classe dédiée envisagée au départ (`TreeFallPhysics`) :
+l'intégration tient en trois lignes dans le tick de l'entité, une classe n'aurait
+rien apporté.
 
 ### Point d'interception de l'abattage
 
@@ -273,13 +287,13 @@ Le mixin de temps de cassage (`getDestroyProgress`) doit appliquer la même cond
 
 Panda passe par un `EntityDataSerializer` custom pour envoyer la map de blocs. **Cette voie est fermée** : en 26.2, `EntityDataSerializers.registerSerializer` lève explicitement une exception pour les mods, et NeoForge impose son propre registre (`NeoForgeRegistries.ENTITY_DATA_SERIALIZERS`) que Fabric n'a pas.
 
-À la place : payload réseau custom S2C envoyé aux joueurs qui trackent l'entité, sur le modèle de `StealthStatePayload` déjà en place dans `wild-instincts` (`IPlatformHelper` + impls Fabric/NeoForge). La forme de l'arbre est envoyée une fois à l'apparition ; le client rejoue ensuite la même intégration de pendule localement, donc rien d'autre ne transite.
+À la place : payload réseau custom S2C envoyé aux joueurs qui trackent l'entité, via le mécanisme vanilla `ServerChunkCache.sendToTrackingPlayers(entity, new ClientboundCustomPayloadPacket(payload))`. Les destinataires sont ainsi exactement ceux du paquet de spawn ; seul l'enregistrement du payload (décodage et handler) reste par loader. La forme de l'arbre est envoyée une fois à l'apparition ; le client rejoue ensuite la même intégration de pendule localement, donc rien d'autre ne transite.
 
 ### Rendu
 
 `SubmitNodeCollector.submitBlock` utilisé par Panda **n'existe plus en 26.2**. Le vanilla passe désormais par `submitNodeCollector.submitMovingBlock(poseStack, MovingBlockRenderState, outlineColor)`, chaque bloc nécessitant un `MovingBlockRenderState` (blockState, blockPos, randomSeedPos, biome, cardinalLighting, lightEngine). Voir `FallingBlockRenderer` 26.2.
 
-Conséquence : pour un arbre de 100 blocs il faut 100 `MovingBlockRenderState`. Ils seront préalloués dans le render state de l'entité et mis à jour dans `extractRenderState`, pas alloués par frame.
+Conséquence : pour un arbre de 100 blocs il faut 100 `MovingBlockRenderState`, reconstruits à chaque frame dans `extractRenderState`. La préallocation envisagée initialement est impossible : `EntityRenderer.createRenderState(entity, partialTick)` recrée le render state entier à chaque frame (vérifié dans les sources 26.2), et le `FallingBlockRenderer` vanilla alloue de la même façon. À l'échelle d'une chute de trois secondes, le coût est négligeable.
 
 **Un renderer est obligatoire dès qu'une entité existe**, même quand il n'y a rien à dessiner. Sans renderer enregistré, `EntityRenderDispatcher.shouldRender` déréférence un renderer nul et le client crashe à la seconde où l'entité entre dans le champ de vision. Découvert en jeu à M1, où l'entité était censée rester invisible : un `FallingTreeRenderer` qui ne dessine rien a été ajouté. Il n'existe pas d'état « entité sans rendu ».
 
@@ -309,6 +323,9 @@ Le renderer applique une seule rotation (translation vers le pivot, rotation de 
 | `BeehiveBlock.angerNearbyBees(level, pos)` | **privé**, accessor mixin ou reproduction |
 | `EnchantmentTags.PREVENTS_BEE_SPAWNS_WHEN_MINING` | présent, condition vanilla à respecter |
 | `CriteriaTriggers.BEE_NEST_DESTROYED` | présent |
+| `ServerChunkCache.sendToTrackingPlayers(Entity, Packet)` | présent, public, cible les trackers exacts |
+| `ClientboundCustomPayloadPacket` | record public, enveloppe un `CustomPacketPayload` |
+| `EntityRenderer.createRenderState(entity, partialTick)` | recrée le render state à chaque frame, préallocation impossible |
 
 Réserve : les sources lues proviennent du cache NeoForm, donc **patchées NeoForge** (`EventHooks`, `@OnlyIn`, extensions `IFallable`). Le module `common` doit s'en tenir strictement aux API vanilla. À revalider sur Fabric au premier build.
 
@@ -334,9 +351,14 @@ Ajustements par rapport au découpage initial :
 
 ### Synchronisation retenue à M2
 
-Le client reçoit la forme **une seule fois**, au tick 1 de l'entité (un tick après le paquet de spawn, pour que l'entité existe déjà côté client), envoyée à tous les joueurs dans un rayon de 96 blocs via `IPlatformHelper.sendToPlayer`. Aucun paquet ensuite : les deux côtés intègrent le même pendule depuis le même angle de départ, et la hauteur servant de longueur de pendule est recalculée depuis les pièces des deux côtés, ce qui interdit toute divergence.
+Le client reçoit la forme **une seule fois**, au tick 1 de l'entité (un tick après le paquet de spawn, pour que l'entité existe déjà côté client), envoyée aux joueurs qui trackent l'entité via `ServerChunkCache.sendToTrackingPlayers`. Aucun paquet ensuite : les deux côtés intègrent le même pendule depuis le même angle de départ, et la hauteur servant de longueur de pendule est recalculée depuis les pièces des deux côtés, ce qui interdit toute divergence.
 
 Cela évite les hooks de tracking par loader (`EntityTrackingEvents` côté Fabric, `PlayerEvent.StartTracking` côté NeoForge) au prix d'un cas non couvert : un joueur qui arrive à portée en cours de chute ne verra pas l'arbre. Sur une seconde de chute, c'est acceptable.
+
+Une première version envoyait la forme dans un rayon fixe de 96 blocs, inférieur au
+`clientTrackingRange` de l'entité (10 chunks, 160 blocs) : un joueur entre les deux
+recevait le spawn mais jamais la forme, donc un arbre invisible. Passer par les
+trackers vanilla fait coïncider les deux ensembles par construction.
 
 Le rendu interpole entre l'angle du tick précédent et l'angle courant, sinon l'animation serait saccadée à 20 images par seconde.
 - **M3** : balayage de dégâts et damage type custom. **Balayage écrit, build vert.** Restent l'arrêt sur obstacle et l'éclatement des feuilles au contact du terrain.
