@@ -1,0 +1,16 @@
+{
+  "tree_falling": {
+    "subtitle": "subtitles.bucheron.tree_falling",
+    "sounds": [
+      "bucheron:tree_falling",
+      "bucheron:tree_falling_2"
+    ]
+  },
+  "tree_down": {
+    "subtitle": "subtitles.bucheron.tree_down",
+    "sounds": [
+      "bucheron:tree_down",
+      "bucheron:tree_down_2"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "death.attack.falling_tree": "%1$s was crushed by a falling tree",
+  "death.attack.falling_tree.player": "%1$s was crushed by a tree felled by %2$s",
+  "subtitles.bucheron.tree_falling": "Tree topples",
+  "subtitles.bucheron.tree_down": "Tree hits the ground"
+}
