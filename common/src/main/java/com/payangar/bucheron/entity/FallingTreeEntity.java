@@ -14,7 +14,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
-import net.minecraft.world.level.block.SoundType;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
@@ -23,6 +22,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
@@ -66,7 +66,7 @@ public class FallingTreeEntity extends Entity {
     private static final float START_ANGULAR_VELOCITY = 0.018F;
 
     /** Flat on the ground. */
-    private static final float FLAT_ANGLE = (float) (Math.PI / 2.0);
+    private static final float FLAT_ANGLE = Mth.HALF_PI;
 
     /** How long the felled tree lies there before it turns into items. */
     private static final int REST_TICKS = 40;
@@ -107,14 +107,13 @@ public class FallingTreeEntity extends Entity {
     /**
      * A canopy scraping the ground crushes many blocks at once, and playing every break sound
      * would be both wasteful and mush to the ear. Impacts falling inside the same cell of this
-     * grid, within {@link #CRUSH_SOUND_COOLDOWN} ticks, are merged into a single louder sound.
+     * grid are merged into a single louder sound.
      *
-     * <p>Merging by locality rather than capping per tick matters: a cap silences sounds by
-     * iteration order, so two impacts at opposite ends of a big tree could cancel each other while
-     * two adjacent ones both play.
+     * <p>Merging by locality rather than capping matters: a cap silences sounds by iteration
+     * order, so two impacts at opposite ends of a big tree could cancel each other while two
+     * adjacent ones both play.
      */
     private static final int CRUSH_SOUND_CELL = 3;
-    private static final int CRUSH_SOUND_COOLDOWN = 4;
 
     /** Leaves are thrown along the canopy's motion, but a fraction of it reads better than 1:1. */
     private static final float FLING_SCALE = 0.35F;
@@ -139,9 +138,6 @@ public class FallingTreeEntity extends Entity {
 
     private final List<Piece> pieces = new ArrayList<>();
     private final List<ItemStack> drops = new ArrayList<>();
-
-    /** Last tick a crush sound was voiced per sound cell, which is how nearby impacts merge. */
-    private final Map<Long, Integer> lastCrushSoundTick = new HashMap<>();
 
     private Direction fallDirection = Direction.NORTH;
     private float angle;
@@ -201,15 +197,16 @@ public class FallingTreeEntity extends Entity {
     public void tick() {
         super.tick();
         previousAngle = angle;
+        ServerLevel serverLevel = level() instanceof ServerLevel server ? server : null;
 
-        if (tickCount == 1 && level() instanceof ServerLevel serverLevel) {
+        if (tickCount == 1 && serverLevel != null) {
             broadcastShape(serverLevel);
             playTreeSound(serverLevel, BucheronSounds.TREE_FALLING);
         }
 
         if (grounded) {
             restTicks++;
-            if (restTicks >= REST_TICKS && level() instanceof ServerLevel serverLevel) {
+            if (restTicks >= REST_TICKS && serverLevel != null) {
                 releaseDrops(serverLevel);
             }
             return;
@@ -226,7 +223,7 @@ public class FallingTreeEntity extends Entity {
         }
 
         // The landing tick is the fastest part of the fall, so it must be swept like any other.
-        if (level() instanceof ServerLevel serverLevel) {
+        if (serverLevel != null) {
             TreeSweep.apply(serverLevel, this, previousAngle, angle);
             shedLeaves(serverLevel);
 
@@ -241,7 +238,7 @@ public class FallingTreeEntity extends Entity {
             angularVelocity = 0.0F;
             grounded = true;
 
-            if (level() instanceof ServerLevel serverLevel) {
+            if (serverLevel != null) {
                 playTreeSound(serverLevel, BucheronSounds.TREE_DOWN);
             }
 
@@ -250,7 +247,7 @@ public class FallingTreeEntity extends Entity {
             //
             // Runs on both sides: the calculation is identical and the client knows the blocks, so
             // the canopy comes apart the same way there without a single packet.
-            crushLeavesOnContact();
+            crushLeavesOnContact(serverLevel);
         }
     }
 
@@ -304,14 +301,16 @@ public class FallingTreeEntity extends Entity {
      *
      * <p>This is where most of the foliage comes from. A canopy sweeping into the ground shatters,
      * and that contact is the visible event, far more than the trail it leaves in the air.
+     *
+     * @param serverLevel null on the client, which only removes the crushed blocks
      */
-    private void crushLeavesOnContact() {
+    private void crushLeavesOnContact(ServerLevel serverLevel) {
         if (pieces.isEmpty()) {
             return;
         }
 
-        List<Piece> crushed = null;
-        Map<Long, CrushCell> cells = null;
+        List<Piece> crushed = new ArrayList<>();
+        Map<Long, CrushCell> cells = new HashMap<>();
 
         for (Piece piece : pieces) {
             if (!piece.state().is(BlockTags.LEAVES)) {
@@ -325,30 +324,21 @@ public class FallingTreeEntity extends Entity {
                 continue;
             }
 
-            if (crushed == null) {
-                crushed = new ArrayList<>();
-            }
             crushed.add(piece);
 
-            if (level() instanceof ServerLevel serverLevel) {
+            if (serverLevel != null) {
                 // Particles stay per block: the burst has to happen where the leaves actually were.
                 // One packet each, because count > 0 spreads them randomly, which is exactly right
                 // for something shattering in every direction.
                 burstLeaves(serverLevel, piece, at, pos);
-
-                if (cells == null) {
-                    cells = new HashMap<>();
-                }
                 cells.computeIfAbsent(soundCellKey(pos), key -> new CrushCell(pos, piece.state())).merge(pos);
             }
         }
 
-        if (cells != null) {
-            playMergedCrushSounds((ServerLevel) level(), cells);
+        if (serverLevel != null) {
+            playMergedCrushSounds(serverLevel, cells);
         }
-        if (crushed != null) {
-            pieces.removeAll(crushed);
-        }
+        pieces.removeAll(crushed);
     }
 
     /**
@@ -410,16 +400,7 @@ public class FallingTreeEntity extends Entity {
     }
 
     private void playMergedCrushSounds(ServerLevel level, Map<Long, CrushCell> cells) {
-        for (Map.Entry<Long, CrushCell> entry : cells.entrySet()) {
-            // Explicit null check rather than a sentinel default: subtracting Integer.MIN_VALUE
-            // overflows and comes back negative, which silently swallowed every sound.
-            Integer lastVoiced = lastCrushSoundTick.get(entry.getKey());
-            if (lastVoiced != null && tickCount - lastVoiced < CRUSH_SOUND_COOLDOWN) {
-                continue;
-            }
-            lastCrushSoundTick.put(entry.getKey(), tickCount);
-
-            CrushCell cell = entry.getValue();
+        for (CrushCell cell : cells.values()) {
             // The block's own break sound, without breaking anything: these leaves belong to the
             // falling tree, not to the world. Going through SoundType means the sound follows the
             // species for free, cherry included.

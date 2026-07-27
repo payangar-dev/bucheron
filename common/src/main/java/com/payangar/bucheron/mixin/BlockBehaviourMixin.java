@@ -25,9 +25,6 @@ public abstract class BlockBehaviourMixin {
     private void bucheron$slowDownWithTreeSize(
         BlockState state, Player player, BlockGetter level, BlockPos pos, CallbackInfoReturnable<Float> callback
     ) {
-        float adjusted = TreeMiningSpeed.adjust(state, player, level, pos, callback.getReturnValue());
-        if (adjusted != callback.getReturnValue()) {
-            callback.setReturnValue(adjusted);
-        }
+        callback.setReturnValue(TreeMiningSpeed.adjust(state, player, level, pos, callback.getReturnValue()));
     }
 }

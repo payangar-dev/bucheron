@@ -35,6 +35,7 @@ public final class TreeMiningSpeed {
     private record Cached(BlockPos pos, int logs) {
     }
 
+    /** One tiny entry per player, overwritten at each new target. Never evicted; harmless at this size. */
     private static final Map<UUID, Cached> CACHE = new ConcurrentHashMap<>();
 
     private TreeMiningSpeed() {

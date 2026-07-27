@@ -52,20 +52,16 @@ public final class TreeScanner {
 
     /** @return connected logs, or null when the trunk exceeds {@link #MAX_LOGS} */
     private static List<BlockPos> gatherLogs(BlockGetter level, BlockPos origin) {
-        List<BlockPos> logs = new ArrayList<>();
-        Set<BlockPos> visited = new HashSet<>();
+        // FIFO discovery order is also processing order, so the visited set doubles as the result.
+        Set<BlockPos> logs = new LinkedHashSet<>();
         Queue<BlockPos> queue = new ArrayDeque<>();
 
         BlockPos start = origin.immutable();
         queue.add(start);
-        visited.add(start);
+        logs.add(start);
 
         while (!queue.isEmpty()) {
             BlockPos current = queue.poll();
-            logs.add(current);
-            if (logs.size() > MAX_LOGS) {
-                return null;
-            }
 
             // Same layer and the one above only, so the scan can never walk down into a floor.
             for (int dx = -1; dx <= 1; dx++) {
@@ -75,17 +71,20 @@ public final class TreeScanner {
                             continue;
                         }
                         BlockPos neighbour = current.offset(dx, dy, dz);
-                        if (visited.contains(neighbour) || !isLog(level.getBlockState(neighbour))) {
+                        if (logs.contains(neighbour) || !isLog(level.getBlockState(neighbour))) {
                             continue;
                         }
                         BlockPos immutable = neighbour.immutable();
-                        visited.add(immutable);
+                        logs.add(immutable);
+                        if (logs.size() > MAX_LOGS) {
+                            return null;
+                        }
                         queue.add(immutable);
                     }
                 }
             }
         }
-        return logs;
+        return new ArrayList<>(logs);
     }
 
     /**
