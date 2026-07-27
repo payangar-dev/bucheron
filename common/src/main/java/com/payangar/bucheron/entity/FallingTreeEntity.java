@@ -4,12 +4,11 @@ import com.payangar.bucheron.BucheronSounds;
 import com.payangar.bucheron.damage.TreeSweep;
 import com.payangar.bucheron.fx.LeafEffects;
 import com.payangar.bucheron.network.TreeShapePayload;
-import com.payangar.bucheron.platform.Services;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
@@ -68,8 +67,6 @@ public class FallingTreeEntity extends Entity {
 
     /** Failsafe: a tree that somehow never lands must not linger. */
     private static final int MAX_LIFETIME_TICKS = 400;
-
-    private static final double SHAPE_SEND_RADIUS = 96.0;
 
     /** One block of the tree: where it sits relative to the stump, and what it looks like. */
     public record Piece(BlockPos offset, BlockState state) {
@@ -252,11 +249,8 @@ public class FallingTreeEntity extends Entity {
         }
 
         TreeShapePayload payload = new TreeShapePayload(getId(), (byte) fallDirection.ordinal(), wire);
-        for (ServerPlayer player : level.players()) {
-            if (player.distanceToSqr(this) <= SHAPE_SEND_RADIUS * SHAPE_SEND_RADIUS) {
-                Services.PLATFORM.sendToPlayer(player, payload);
-            }
-        }
+        // Exactly the players the spawn packet went to, so a tracked tree is never invisible.
+        level.getChunkSource().sendToTrackingPlayers(this, new ClientboundCustomPayloadPacket(payload));
     }
 
     private void releaseDrops(ServerLevel level) {

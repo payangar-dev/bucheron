@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The shape of a falling tree, sent once to every player near it.
+ * The shape of a falling tree, sent once to every player tracking it.
  *
  * <p>Only the shape travels. Both sides run the same deterministic pendulum integration from the
  * same starting angle, so the animation needs no further packets.
