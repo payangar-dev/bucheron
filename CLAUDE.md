@@ -28,9 +28,15 @@ validé en jeu par Pierre au fil de la journée :
   de cassage proportionnel à la taille, x1.5 sans outil adapté (cache partagé
   client/serveur).
 
+Versionné sur https://github.com/payangar-dev/bucheron (public). Pipeline de
+release en place : un tag `v*` build les deux loaders, crée la Release GitHub et
+publie sur Modrinth et CurseForge. Secrets `MODRINTH_TOKEN` / `CURSEFORGE_TOKEN`
+configurés ; il manque les variables de dépôt `MODRINTH_ID` et `CURSEFORGE_ID`,
+que Pierre fournira, sans quoi la publication échouera en 404.
+
 Reste : arrêt de l'arbre sur obstacle (il traverse le terrain aujourd'hui),
 vignes / cacaoyers / ruches emportés (abeilles libérées et miel au craquement),
-config, gametests, pipeline de release. **Rien n'est encore committé.**
+config, gametests.
 
 Questions ouvertes : yaw libre plutôt que quatre cardinales, plafond éventuel sur
 le temps de cassage d'un arbre géant (aucun aujourd'hui, la proportionnalité est
