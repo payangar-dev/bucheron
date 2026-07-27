@@ -19,6 +19,22 @@ loom {
             setConfigName('Fabric Client')
             ideConfigGenerated(true)
             runDir('runs/client')
+            programArgs('--username', 'Payangar')
+            // -Pquickplay=host:port makes the client join that server straight from launch.
+            if (project.hasProperty('quickplay')) {
+                programArgs('--quickPlayMultiplayer', project.property('quickplay').toString())
+            }
+        }
+        // Second client for multiplayer testing against runServer.
+        client2 {
+            client()
+            setConfigName('Fabric Client 2')
+            ideConfigGenerated(false)
+            runDir('runs/client2')
+            programArgs('--username', 'Payangar2')
+            if (project.hasProperty('quickplay')) {
+                programArgs('--quickPlayMultiplayer', project.property('quickplay').toString())
+            }
         }
         server {
             server()
