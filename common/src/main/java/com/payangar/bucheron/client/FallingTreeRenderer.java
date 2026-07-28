@@ -11,7 +11,11 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Quaternionf;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /** Draws the tree as its own blocks, rotated about the base edge it tips over. */
 public class FallingTreeRenderer extends EntityRenderer<FallingTreeEntity, FallingTreeRenderState> {
@@ -37,14 +41,18 @@ public class FallingTreeRenderer extends EntityRenderer<FallingTreeEntity, Falli
         }
 
         BlockPos stump = entity.blockPosition();
+        Map<BlockPos, BlockState> treeBlocks = new HashMap<>();
+        for (FallingTreeEntity.Piece piece : entity.pieces()) {
+            treeBlocks.put(stump.offset(piece.offset()), piece.state());
+        }
+
         for (FallingTreeEntity.Piece piece : entity.pieces()) {
             BlockPos worldPos = stump.offset(piece.offset());
 
-            MovingBlockRenderState block = new MovingBlockRenderState();
+            MovingBlockRenderState block = new TreePieceRenderState(treeBlocks, level);
             block.randomSeedPos = worldPos;
             block.blockPos = worldPos;
             block.blockState = piece.state();
-            block.biome = level.getBiome(worldPos);
             block.cardinalLighting = level.cardinalLighting();
             block.lightEngine = level.getLightEngine();
 

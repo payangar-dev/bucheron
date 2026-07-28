@@ -299,6 +299,8 @@ Conséquence : pour un arbre de 100 blocs il faut 100 `MovingBlockRenderState`, 
 
 Le renderer applique une seule rotation (translation vers le pivot, rotation de `θ`, translation inverse) puis dessine chaque bloc à sa position relative.
 
+**Éclairage** (validé en jeu le 2026-07-28) : le `MovingBlockRenderState` vanilla renvoie de l'air pour tout voisin, donc l'ambient occlusion, bien qu'active sur ce chemin de rendu (`MovingBlockFeatureRenderer` construit son `ModelBlockRenderer` avec l'option smooth lighting du joueur), tournait à vide : chaque bloc était éclairé comme isolé en plein ciel, d'où un arbre visiblement plus plat que ses voisins en chunk. `TreePieceRenderState` corrige en exposant comme voisinage les pièces de l'arbre à leurs positions debout (map partagée) avec repli sur le `ClientLevel`, et délègue `getBlockTint` au level pour la teinte de biome fondue. L'ombrage est ainsi identique à l'arbre debout à l'instant de l'abattage et reste figé dans cette orientation pendant la rotation, comme les blocs qui tombent en vanilla. Purement client, aucune donnée transmise.
+
 ---
 
 ## Vérifié dans le vanilla 26.2
